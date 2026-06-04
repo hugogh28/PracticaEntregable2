@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
 
 /******************************************************************************
@@ -13,12 +15,16 @@ using UnityEngine;
 *
 * Nombre de la clase: MassSpring
 * Breve descripción: La siguiente clase de C# gestiona todos los cálculos que debene efectuarse en el objeto masa-muelle, para así obtener unas físicas adecuadas.
-* Esto se logra desde la asignación de nodos y muelles al mallado del objeto (plano/tela), hasta la aplicación de los métodos de integración Euler explícito, el cual, debido a su 
+* Esto se logra desde la asignación de nodos y muelles al mallado del objeto, hasta la aplicación de los métodos de integración Euler explícito, el cual, debido a su 
 * inestabilidad, no es recomendable usarlo, y Euler simpléctico.
 *****************************************************************************/
 
 public class MassSpring : MonoBehaviour
 {
+    [Header("Archivos")]
+    public TextAsset nodeTetgen; //Tomamos el archivo de texto que contiene la información de los vértices
+    public TextAsset eleTetgen; //Tomamos el archivo de texto que contiene la información de los tetraedros
+
     [Header("Modificadores de la animación")]
     public bool paused; //Booleano que nos servirá para pausar la animación
     public float mass; //Masa del objeto (100 gramos)
@@ -32,6 +38,15 @@ public class MassSpring : MonoBehaviour
         SymplecticEuler = 1
     }
 
+    private enum TypeOfFile
+    {
+        Node = 0,
+        Ele = 1
+    }
+
+    private TypeOfFile node = TypeOfFile.Node;
+    private TypeOfFile ele = TypeOfFile.Ele;
+
     [Header("Métodos de integración")]
     public Integration integrationMethod; //Este será el método de integración escogido
 
@@ -43,6 +58,11 @@ public class MassSpring : MonoBehaviour
     bool nodeListIsFull = false; //Booleano para comprobar si la lista de nodos está llena
 
     public List<Node> ListOfNodes; //Lista de nodos
+
+    public List<float> parseList;
+
+    public List<int> ListOfTet;
+    public List<float> ListOfNode;
 
 
     [Header("Constantes de rigidez")]
@@ -60,6 +80,10 @@ public class MassSpring : MonoBehaviour
 
     void Start()
     {
+        Debug.Log("Inicio del archivo .node");
+        ParseFile(node, nodeTetgen, ListOfNode);
+        Debug.Log("Inicio del archivo .ele");
+        ParseFile(ele, eleTetgen, ListOfTet);
         Mesh mesh = this.GetComponent<MeshFilter>().mesh; //Se guarda en la variable mesh el mallado del objeto
 
         cloth = mesh; //Para poder hacer las modificaciones en la malla, se guarda la mesh en una variable global
@@ -117,29 +141,66 @@ public class MassSpring : MonoBehaviour
         ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
     }
 
-    void ParseFile(string file)
+    //Se pasa por referencia el tipo de archivo, para poder deyterminar cómo se parseará
+    void ParseFile<T>(TypeOfFile type,TextAsset file, List<T> list)
     {
-        string text = File.ReadAllText(file);
-        //Será necesario mirar cómo deben hacerse los separadores (ahora mismo no es correcto)
-        char[] separators = { ',', ';', '|' , 'v'};
-        string[] strValues = text.Split(separators);
+        string text = file.text; //Extraemos todo el contenido del archivo, para ello, usamos el componente "text" 
+        text = text.Substring(0, text.IndexOf("#")); //Eliminamos todo lo que se encuentre en el string al aparecer el #, de este modo, se elimina la línea comentada
+        string[] strValues = text.Split(" ", StringSplitOptions.RemoveEmptyEntries); //Para evitar posibles espacios en blanco
+        
+        int idx = 0;
+        int stride = 0;
 
-        //Lo siguiente puede ser que se pueda añadir directamente a la lista de ListOfNodes
-        List<int> intValues = new List<int>();
-        foreach(string str in strValues)
+        if(type == TypeOfFile.Node) 
         {
-            int val = 0;
-            if(int.TryParse(str, out val))
+            idx = 4;
+            stride = 4;
+
+            for (int i = idx; i < strValues.Length; i++) //Saltamos los número iniciales, ya que los índices no se busca conservarlos
             {
-                intValues.Add(val);
+                if (i == idx)
+                {
+                    continue; //Saltamos esta iteración, pues no es necesario comprobar más
+                }
+
+                if (i % idx != 0) //Funciona para node porque stride e idx son el mismo número
+                {
+                    AddValues(i, strValues, list);
+                }
             }
         }
+        else if(type == TypeOfFile.Ele)
+        {
+            idx = 3;
+            stride = 5;
+
+            for (int i = idx; i < strValues.Length; i++) //Saltamos los número iniciales, ya que los índices no se busca conservarlos
+            {
+                if (i == idx)
+                {
+                    continue; //Saltamos esta iteración, pues no es necesario comprobar más
+                }
+
+                if ((i - idx) % stride != 0) //Debemos restar idx a i, porque a diferencia de con el fichero node, idx y stride no son el mismo valor
+                {
+                    AddValues(i, strValues, list);
+                }
+            }
+        }
+    }
+
+    //Método genérico para añadir los valores de cada fichero a la lista pasada como parámetro
+    private void AddValues<T>(int idx, string[] values, List<T> list)
+    {
+        T value = (T)Convert.ChangeType(values[idx], typeof(T));
+        list.Add(value);
+        Debug.Log(value);
     }
 
     private void OnDrawGizmos()
     {
         //Dibujado de los gizmos de los nodos en coordenadas globales
-        Gizmos.matrix = transform.localToWorldMatrix; //Se hace el paso de coordenadas locales a globales para evitgar que los gizmos se pinten en otro lugar que no sea el nodo correspondiente
+        Gizmos.matrix = transform.localToWorldMatrix; //Se hace el paso de coordenadas locales a globales para evitar que los gizmos se pinten en otro lugar que no sea el nodo correspondiente
         DrawIfNotNull(); //Se trata de dibujar los gizmos
     }
 

@@ -580,6 +580,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ddaf44fb7b36f60428a3b6129101038d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  nodeTetgen: {fileID: 4900000, guid: 41d2d9d73f577884b9a6aedf36f20e3b, type: 3}
+  eleTetgen: {fileID: 4900000, guid: 93b972e62e027cc40bc9c40aef4857a8, type: 3}
   paused: 1
   mass: 0.1
   g: {x: 0, y: 9.8, z: 0}
@@ -587,6 +589,7 @@ MonoBehaviour:
   dampingSprings: 0.2
   integrationMethod: 1
   h: 0.02
+  parseList: []
   kT: 100
   kF: 0.5
   fixer:
