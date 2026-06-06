@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Unity.VisualScripting;
+using UnityEditor;
 using UnityEngine;
 
 /******************************************************************************
@@ -61,9 +62,10 @@ public class MassSpring : MonoBehaviour
 
     public List<float> parseList;
 
-    public List<int> ListOfTet;
-    public List<float> ListOfNode;
+    public List<int> ListOfTet = new List<int>();
+    public List<float> ListOfNode = new List<float>();
 
+    bool nodeFull = false;
 
     [Header("Constantes de rigidez")]
     public float kT; //Constante de rigidez de los muelles de tracción
@@ -78,12 +80,23 @@ public class MassSpring : MonoBehaviour
 
     Vector3Int[] edges; //Creamos un array edges de tipo Vector3Int (para ahorrarnos el casting de float a int), para asignar las aristas 
 
+    Vector3Int[] faces; //Creamos un array faces de tipo Vector3Int para almacenar todos los triángulos de los tetraedros
+
+    Dictionary<Vector3Int, Vector3Int> facesDictionary = new Dictionary<Vector3Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente los triángulos repetidos, ya que se les puede asignar una clave
+    Dictionary<Vector2Int, Vector3Int> edgesDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
+    
+    List<Vector3Int> facesList = new List<Vector3Int>();
+    List<Vector3Int> edgesList = new List<Vector3Int>();
     void Start()
     {
         Debug.Log("Inicio del archivo .node");
         ParseFile(node, nodeTetgen, ListOfNode);
+
         Debug.Log("Inicio del archivo .ele");
         ParseFile(ele, eleTetgen, ListOfTet);
+
+        nodeFull = true;
+
         Mesh mesh = this.GetComponent<MeshFilter>().mesh; //Se guarda en la variable mesh el mallado del objeto
 
         cloth = mesh; //Para poder hacer las modificaciones en la malla, se guarda la mesh en una variable global
@@ -98,30 +111,70 @@ public class MassSpring : MonoBehaviour
 
         int[] triangles = mesh.triangles; //Se guardan en un array todos los triángulos de la mesh
 
-        for(int i = 0; i < vertices.Length; i++) //Se itera tantas veces como vértices hay en el array vertices, complejidad O(n)
+        for(int i = 0; i + 2 < ListOfNode.Count; i += 3) //Se itera tantas veces como vértices hay en el array vertices, complejidad O(n)
         {
-            nodes.Add(new Node(vertices[i], fixer, transform)); //Cada vez que se itera sobre el bucle de vértices de la mesh, se añade un nuevo nodo, cuya posición corresponde a la de su vértice
+            nodes.Add(new Node(new Vector3(ListOfNode[i], ListOfNode[i + 1], ListOfNode[i + 2]), fixer, transform)); //Cada vez que se itera sobre el bucle de vértices de la mesh, se añade un nuevo nodo, cuya posición corresponde a la de su vértice
                                                      //Además, se comprueba, mediante la lista de fixers, si dicho nodo debe estar fijado antes de comenzar la animación y, para dicha comprobació,
                                                      //es necesario reconvertir de coordenadas locales a globales, por lo que pasamos el componente transform del objeto masa-muelle al constructor del nodo
             
-            verts[i] = nodes[i].pos; //Se rellena el array verts con sus correspondientes nodos del array nodes
+            //verts[i] = nodes[i].pos; //Se rellena el array verts con sus correspondientes nodos del array nodes
         }
-        nodeListIsFull = true; //Se activa el booleano nodeListIsFull cuando la lista de nodos se ha llenado con todos los elementos del objeto
 
         ListOfNodes = nodes; //Para poder hacer uso de OnDrawGizmos() se pasa la lista nodes a ListOfNodes
 
-        edges = new Vector3Int[triangles.Length]; //Creamos la estructura edges, para almacenar todas las aristas
+        nodeListIsFull = true; //Se activa el booleano nodeListIsFull cuando la lista de nodos se ha llenado con todos los elementos del objeto
 
-        for(int i = 0; i<edges.Length-1; i+=3) //Recorremos el array triangles, para asignar a edges cada arista
+
+
+        faces = new Vector3Int[ListOfTet.Count]; //Creamos un array de caras, para almacenar todos los triángulos de todos los tetraedros
+
+        for(int i = 0; i + 3<faces.Length; i += 4) //Seguimos una adición de triángulos (faces) de forma similar al objeto MassSpringCloth
         {
-            edges[i] = new Vector3Int(Math.Min(triangles[i], triangles[i+1]), Math.Max(triangles[i], triangles[i + 1]), triangles[i + 2]); // ABC
-            edges[i+1] = new Vector3Int(Math.Min(triangles[i], triangles[i + 2]), Math.Max(triangles[i], triangles[i + 2]), triangles[i + 1]); // ACB
-            edges[i+2] = new Vector3Int(Math.Min(triangles[i + 1], triangles[i + 2]), Math.Max(triangles[i + 1], triangles[i + 2]), triangles[i]);// BCA 
+            faces[i] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 1] - 1, ListOfTet[i + 2] - 1);        //ABC
+            faces[i+1] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 1] - 1, ListOfTet[i + 3] - 1);      //ABD
+            faces[i+2] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 2] - 1, ListOfTet[i + 3] - 1);      //ACD
+            faces[i+3] = new Vector3Int(ListOfTet[i + 1] - 1, ListOfTet[i + 2] - 1, ListOfTet[i + 3] - 1);  //BCD
+        }
+
+        for(int i = 0; i< faces.Length; i++) //Iteramos sobre el array de todos los triángulos para extraer los duplicados
+        {
+            if (facesDictionary.ContainsKey(GetFaceKey(faces[i])))
+            {
+                facesDictionary.Remove(GetFaceKey(faces[i])); //Eliminamos la cara interna al encontrar un duplicado
+            }
+            else
+            {
+                facesDictionary.Add(GetFaceKey(faces[i]), faces[i]); //Si la clave no existe, se añade el triángulo al diccionario
+            }
+        }
+        facesList = facesDictionary.Values.ToList();
+
+        edges = new Vector3Int[facesList.Count * 3]; //Creamos la estructura edges, para almacenar todas las aristas
+
+        for (int i = 0; i<facesList.Count; i++) //Recorremos la lista de triángulos, para asignar a edges cada arista
+        {
+            edges[i*3] = new Vector3Int(Math.Min(facesList[i].x, facesList[i].y), Math.Max(facesList[i].x, facesList[i].y), facesList[i].z); // ABC
+            edges[i*3+1] = new Vector3Int(Math.Min(facesList[i].x, facesList[i].z), Math.Max(facesList[i].x, facesList[i].z), facesList[i].y); // ACB
+            edges[i*3+2] = new Vector3Int(Math.Min(facesList[i].y, facesList[i].z), Math.Max(facesList[i].y, facesList[i].z), facesList[i].x);// BCA 
         }
 
         edges = edges.OrderBy(edge => edge.x).ThenBy(edge => edge.y).ToArray(); //Ordenamos el array edges en función del primer parámetro de una arista, y luego, en función del segundo parámetro
 
-        for(int i = 0; i < edges.Length; i++) //Se itera tantas veces como aristas hay (600 en el caso original)
+
+        for (int i = 0; i< edges.Length; i++) //Se sigue un método de identificación de duplicados de forma similar que con faces, solo que en este caso, debemos comprobar solo entre dos valores
+        {
+            if (edgesDictionary.ContainsKey(new Vector2Int(edges[i].x, edges[i].y)))
+            {
+                continue; //Saltamos la iteración para ignorar los duplicados
+            }
+            else
+            {
+                edgesDictionary.Add(new Vector2Int(edges[i].x, edges[i].y), edges[i]); //Si no hay arista duplicada se añade al diccionario
+                edgesList.Add(edges[i]);    //Si no hay arista duplicada, se añade a la lista para dibujarla después
+            }
+        }
+
+        /*for(int i = 0; i < edges.Length; i++) //Se itera tantas veces como aristas hay (600 en el caso original)
         {
 
             if (i<edges.Length-1&&edges[i].x == edges[i + 1].x && edges[i].y == edges[i + 1].y) //Si dos aristas (adyacentes en la lista) se detectan como duplicadas, se añadirá un nodo de flexión y se evitará añadir un muelle de tracción
@@ -134,11 +187,19 @@ public class MassSpring : MonoBehaviour
             {
                 springs.Add(new Spring(kT, nodes[edges[i].x], nodes[edges[i].y])); //Añade un muelle de tracción entre los vértices de la arista
             }
-        }
+        }*/
 
         springListIsFull = true; //Se activa el booleano springListIsFull cuando la lista de muelles se ha llenado con todos los elementos del objeto
 
-        ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
+        //ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
+    }
+
+    Vector3Int GetFaceKey(Vector3Int face)
+    {
+        int min = Mathf.Min(face.x, Mathf.Min(face.y, face.z));    //Extraemos el índice más pequeño de los tres
+        int max = Mathf.Max(face.x, Mathf.Max(face.y, face.z));    //Extraemos el índice más grande de los tres
+        int mid = face.x + face.y + face.z - min - max;            //Extraemos el índice medio al haber obtenido los otros dos, simplemente restando al total el valor del mínimo y del máximo
+        return new Vector3Int(min, mid, max);
     }
 
     //Se pasa por referencia el tipo de archivo, para poder deyterminar cómo se parseará
@@ -146,7 +207,8 @@ public class MassSpring : MonoBehaviour
     {
         string text = file.text; //Extraemos todo el contenido del archivo, para ello, usamos el componente "text" 
         text = text.Substring(0, text.IndexOf("#")); //Eliminamos todo lo que se encuentre en el string al aparecer el #, de este modo, se elimina la línea comentada
-        string[] strValues = text.Split(" ", StringSplitOptions.RemoveEmptyEntries); //Para evitar posibles espacios en blanco
+        char[] separators = {' ', '\n', '\r', '\t'}; //Saltamos espacios, saltos de línea o tabulaciones 
+        string[] strValues = text.Split(separators, StringSplitOptions.RemoveEmptyEntries); //Para evitar posibles espacios en blanco
         
         int idx = 0;
         int stride = 0;
@@ -156,17 +218,11 @@ public class MassSpring : MonoBehaviour
             idx = 4;
             stride = 4;
 
-            for (int i = idx; i < strValues.Length; i++) //Saltamos los número iniciales, ya que los índices no se busca conservarlos
+            for (int i = idx; i < strValues.Length; i += stride) //Saltamos los número iniciales, ya que los índices no se busca conservarlos
             {
-                if (i == idx)
-                {
-                    continue; //Saltamos esta iteración, pues no es necesario comprobar más
-                }
-
-                if (i % idx != 0) //Funciona para node porque stride e idx son el mismo número
-                {
-                    AddValues(i, strValues, list);
-                }
+                AddValues(i+1, strValues, list);
+                AddValues(i+3, strValues, list); //Ordenamos los nodos, ya que TetGen y Unity no siguen la misma colocación de ejes
+                AddValues(i+2, strValues, list);
             }
         }
         else if(type == TypeOfFile.Ele)
@@ -181,7 +237,7 @@ public class MassSpring : MonoBehaviour
                     continue; //Saltamos esta iteración, pues no es necesario comprobar más
                 }
 
-                if ((i - idx) % stride != 0) //Debemos restar idx a i, porque a diferencia de con el fichero node, idx y stride no son el mismo valor
+                if ((i - idx) % stride != 0) //Debemos restar idx a i, porque a diferencia de con el fichero node, idx y stride no son el mismo valor y no valdría solo con comprobar si i % idx != 0
                 {
                     AddValues(i, strValues, list);
                 }
@@ -192,8 +248,16 @@ public class MassSpring : MonoBehaviour
     //Método genérico para añadir los valores de cada fichero a la lista pasada como parámetro
     private void AddValues<T>(int idx, string[] values, List<T> list)
     {
-        T value = (T)Convert.ChangeType(values[idx], typeof(T));
-        list.Add(value);
+        object value;
+        if(typeof(T) == typeof(float))
+        {
+            value = float.Parse(values[idx], System.Globalization.CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            value = int.Parse(values[idx], System.Globalization.CultureInfo.InvariantCulture);
+        }
+        list.Add((T)value);
         Debug.Log(value);
     }
 
@@ -201,6 +265,37 @@ public class MassSpring : MonoBehaviour
     {
         //Dibujado de los gizmos de los nodos en coordenadas globales
         Gizmos.matrix = transform.localToWorldMatrix; //Se hace el paso de coordenadas locales a globales para evitar que los gizmos se pinten en otro lugar que no sea el nodo correspondiente
+
+        /*for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
+        {
+            Vector3 pos = new Vector3(
+                ListOfNode[i],
+                ListOfNode[i + 1],
+                ListOfNode[i + 2]
+            );
+
+            Gizmos.color = Color.green;
+            Gizmos.DrawSphere(pos, 0.2f);
+        }*/
+        //Gizmos.matrix = Matrix4x4.identity;
+
+        /*for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
+        {
+            int nodeIndex = (i / 3) + 1; // +1 si quieres que coincida con TetGen
+
+            float x = ListOfNode[i];
+            float y = ListOfNode[i + 1];
+            float z = ListOfNode[i + 2];
+
+            // Si estás intercambiando ejes para Unity:
+            Vector3 pos = new Vector3(x, y, z);
+
+            Gizmos.DrawSphere(pos, 0.2f);
+
+#if UNITY_EDITOR
+            Handles.Label(pos + Vector3.up * 0.25f, nodeIndex.ToString());
+#endif
+        }*/
         DrawIfNotNull(); //Se trata de dibujar los gizmos
     }
 
@@ -208,18 +303,27 @@ public class MassSpring : MonoBehaviour
     //rellenar Gizmos que no existen
     void DrawIfNotNull()
     {
+        /*Gizmos.color = Color.blue;
+        for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
+        {
+            Vector3 pos = new Vector3(ListOfNode[i], ListOfNode[i + 1], ListOfNode[i + 2]);
+            Gizmos.DrawSphere(pos, 0.2f);
+        }*/
+
         if (nodeListIsFull) 
         {
-            Gizmos.color = Color.green; //Se asigna color verde a los gizmos esféricos de los nodos
+            Gizmos.color = Color.blue; //Se asigna color verde a los gizmos esféricos de los nodos
             foreach (var node in ListOfNodes) //Se recorre cada nodo de la lista
             {
-                Gizmos.DrawSphere(node.pos, 0.2f); //Se pinta una esfera de radio 0.2 (unidades de Unity) sobre cada nodo de la lista
+                Gizmos.DrawSphere(node.pos, 0.4f); //Se pinta una esfera de radio 0.2 (unidades de Unity) sobre cada nodo de la lista
             }
         }
 
+        
+
         if (springListIsFull)
         {
-            Gizmos.color = Color.red;
+            /*Gizmos.color = Color.red;
             foreach (var spring in ListOfSprings) //Se recorre cada muelle de la lista
             {
                 if (spring.k == kT) //Si es un muelle de tracción, se pinta de rojo. kT es la constante de rigidez de un muelle de tracción
@@ -235,7 +339,13 @@ public class MassSpring : MonoBehaviour
                 {
                     Gizmos.DrawLine(spring.nodeA.pos, spring.nodeB.pos); //Se pinta una línea sobre cada muelle de la lista
                 }
-            }
+            }*/
+            Gizmos.color = Color.red;
+            foreach(var edge in edgesList)
+            {
+                //Si va mal es porque en programación se empieza en 0 pero TetGen los numera desde el 1
+                Gizmos.DrawLine(new Vector3(ListOfNode[edge.x * 3], ListOfNode[edge.x * 3 + 1], ListOfNode[edge.x * 3 + 2]), new Vector3(ListOfNode[edge.y * 3], ListOfNode[edge.y * 3 + 1], ListOfNode[edge.y * 3 + 2]));
+            } 
         }
     }
 
