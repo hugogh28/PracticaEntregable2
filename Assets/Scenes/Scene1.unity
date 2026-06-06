@@ -500,6 +500,39 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 30, z: 0}
+--- !u!1 &1681859041 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
+  m_PrefabInstance: {fileID: 1800909339}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1681859043
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1681859041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ddaf44fb7b36f60428a3b6129101038d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  nodeTetgen: {fileID: 4900000, guid: 41d2d9d73f577884b9a6aedf36f20e3b, type: 3}
+  eleTetgen: {fileID: 4900000, guid: 93b972e62e027cc40bc9c40aef4857a8, type: 3}
+  paused: 1
+  mass: 0.1
+  g: {x: 0, y: 0, z: 0}
+  dampingNodes: 0.01
+  dampingSprings: 0.2
+  integrationMethod: 1
+  h: 0.02
+  parseList: []
+  ListOfTet: 
+  ListOfNode: []
+  kT: 100
+  kF: 0.5
+  fixer:
+  - {fileID: 67166052}
 --- !u!1001 &1800909339
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -556,6 +589,9 @@ PrefabInstance:
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1681859043}
     - targetCorrespondingSourceObject: {fileID: 6951891913033123169, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1938365145}
@@ -575,7 +611,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1938365140}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ddaf44fb7b36f60428a3b6129101038d, type: 3}
   m_Name: 
@@ -590,7 +626,9 @@ MonoBehaviour:
   integrationMethod: 1
   h: 0.02
   parseList: []
-  kT: 100
+  ListOfTet: 
+  ListOfNode: []
+  kT: 10
   kF: 0.5
   fixer:
   - {fileID: 67166052}

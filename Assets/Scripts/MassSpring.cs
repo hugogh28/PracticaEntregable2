@@ -55,15 +55,13 @@ public class MassSpring : MonoBehaviour
     public float h; //El paso de integración (cuanto más rápido sea, más inestable puede ser)
 
     public List<Spring> ListOfSprings; //Lista de muelles
-    bool springListIsFull = false; //Booleano para comprobar si la lista de muelles está llena
-    bool nodeListIsFull = false; //Booleano para comprobar si la lista de nodos está llena
+    bool _springListIsFull = false; //Booleano para comprobar si la lista de muelles está llena
+    bool _nodeListIsFull = false; //Booleano para comprobar si la lista de nodos está llena
 
     public List<Node> ListOfNodes; //Lista de nodos
 
-    public List<float> parseList;
-
-    public List<int> ListOfTet = new List<int>();
-    public List<float> ListOfNode = new List<float>();
+    private List<int> _listOfTet = new List<int>();
+    private List<float> _listOfNode = new List<float>();
 
     bool nodeFull = false;
 
@@ -78,22 +76,26 @@ public class MassSpring : MonoBehaviour
 
     Vector3[] verts;
 
-    Vector3Int[] edges; //Creamos un array edges de tipo Vector3Int (para ahorrarnos el casting de float a int), para asignar las aristas 
+    Vector3Int[] _edgesToDraw; //Creamos un array edges de tipo Vector3Int (para ahorrarnos el casting de float a int), para asignar las aristas 
+    Vector3Int[] _edges; //Creamos un array edges de tipo Vector3Int (para ahorrarnos el casting de float a int), para asignar las aristas 
 
-    Vector3Int[] faces; //Creamos un array faces de tipo Vector3Int para almacenar todos los triángulos de los tetraedros
+    Vector3Int[] _faces; //Creamos un array faces de tipo Vector3Int para almacenar todos los triángulos de los tetraedros
 
-    Dictionary<Vector3Int, Vector3Int> facesDictionary = new Dictionary<Vector3Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente los triángulos repetidos, ya que se les puede asignar una clave
-    Dictionary<Vector2Int, Vector3Int> edgesDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
+    Dictionary<Vector3Int, Vector3Int> _facesDictionary = new Dictionary<Vector3Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente los triángulos repetidos, ya que se les puede asignar una clave
+    Dictionary<Vector2Int, Vector3Int> _edgesToDrawDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
+    Dictionary<Vector2Int, Vector3Int> _edgesDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
     
-    List<Vector3Int> facesList = new List<Vector3Int>();
-    List<Vector3Int> edgesList = new List<Vector3Int>();
+    List<Vector3Int> _facesList = new List<Vector3Int>();    //Lista de caras no duplicadas
+    List<Vector3Int> _edgesToDrawList = new List<Vector3Int>();  //Lista de aristas que aparecerán dibujadas
+    List<Vector3Int> _edgesList = new List<Vector3Int>();    //Lista de aristas no duplicadas para el cálculo de físicas
+
     void Start()
     {
         Debug.Log("Inicio del archivo .node");
-        ParseFile(node, nodeTetgen, ListOfNode);
+        ParseFile(node, nodeTetgen, _listOfNode);
 
         Debug.Log("Inicio del archivo .ele");
-        ParseFile(ele, eleTetgen, ListOfTet);
+        ParseFile(ele, eleTetgen, _listOfTet);
 
         nodeFull = true;
 
@@ -111,9 +113,9 @@ public class MassSpring : MonoBehaviour
 
         int[] triangles = mesh.triangles; //Se guardan en un array todos los triángulos de la mesh
 
-        for(int i = 0; i + 2 < ListOfNode.Count; i += 3) //Se itera tantas veces como vértices hay en el array vertices, complejidad O(n)
+        for(int i = 0; i + 2 < _listOfNode.Count; i += 3) //Se itera tantas veces como vértices hay en el array vertices, complejidad O(n)
         {
-            nodes.Add(new Node(new Vector3(ListOfNode[i], ListOfNode[i + 1], ListOfNode[i + 2]), fixer, transform)); //Cada vez que se itera sobre el bucle de vértices de la mesh, se añade un nuevo nodo, cuya posición corresponde a la de su vértice
+            nodes.Add(new Node(new Vector3(_listOfNode[i], _listOfNode[i + 1], _listOfNode[i + 2]), fixer, transform)); //Cada vez que se itera sobre el bucle de vértices de la mesh, se añade un nuevo nodo, cuya posición corresponde a la de su vértice
                                                      //Además, se comprueba, mediante la lista de fixers, si dicho nodo debe estar fijado antes de comenzar la animación y, para dicha comprobació,
                                                      //es necesario reconvertir de coordenadas locales a globales, por lo que pasamos el componente transform del objeto masa-muelle al constructor del nodo
             
@@ -122,55 +124,74 @@ public class MassSpring : MonoBehaviour
 
         ListOfNodes = nodes; //Para poder hacer uso de OnDrawGizmos() se pasa la lista nodes a ListOfNodes
 
-        nodeListIsFull = true; //Se activa el booleano nodeListIsFull cuando la lista de nodos se ha llenado con todos los elementos del objeto
+        _nodeListIsFull = true; //Se activa el booleano nodeListIsFull cuando la lista de nodos se ha llenado con todos los elementos del objeto
 
 
 
-        faces = new Vector3Int[ListOfTet.Count]; //Creamos un array de caras, para almacenar todos los triángulos de todos los tetraedros
+        _faces = new Vector3Int[_listOfTet.Count]; //Creamos un array de caras, para almacenar todos los triángulos de todos los tetraedros
 
-        for(int i = 0; i + 3<faces.Length; i += 4) //Seguimos una adición de triángulos (faces) de forma similar al objeto MassSpringCloth
+        for(int i = 0; i + 3<_faces.Length; i += 4) //Seguimos una adición de triángulos (faces) de forma similar al objeto MassSpringCloth
         {
-            faces[i] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 1] - 1, ListOfTet[i + 2] - 1);        //ABC
-            faces[i+1] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 1] - 1, ListOfTet[i + 3] - 1);      //ABD
-            faces[i+2] = new Vector3Int(ListOfTet[i] - 1, ListOfTet[i + 2] - 1, ListOfTet[i + 3] - 1);      //ACD
-            faces[i+3] = new Vector3Int(ListOfTet[i + 1] - 1, ListOfTet[i + 2] - 1, ListOfTet[i + 3] - 1);  //BCD
+            //Se debe restar 1 al índice obtenido de la lista de tetraedros porque Tetgen comienza la numeración en 1 y no en 0
+            _faces[i] = new Vector3Int(_listOfTet[i] - 1, _listOfTet[i + 1] - 1, _listOfTet[i + 2] - 1);        //ABC
+            _faces[i+1] = new Vector3Int(_listOfTet[i] - 1, _listOfTet[i + 1] - 1, _listOfTet[i + 3] - 1);      //ABD
+            _faces[i+2] = new Vector3Int(_listOfTet[i] - 1, _listOfTet[i + 2] - 1, _listOfTet[i + 3] - 1);      //ACD
+            _faces[i+3] = new Vector3Int(_listOfTet[i + 1] - 1, _listOfTet[i + 2] - 1, _listOfTet[i + 3] - 1);  //BCD
         }
 
-        for(int i = 0; i< faces.Length; i++) //Iteramos sobre el array de todos los triángulos para extraer los duplicados
+        _edges = new Vector3Int[_faces.Length * 3]; //Creamos la estructura edges, para almacenar todas las aristas
+
+        for (int i = 0; i< _faces.Length; i++) //Iteramos sobre el array de todos los triángulos para extraer los duplicados
         {
-            if (facesDictionary.ContainsKey(GetFaceKey(faces[i])))
+            if (_facesDictionary.ContainsKey(GetFaceKey(_faces[i])))
             {
-                facesDictionary.Remove(GetFaceKey(faces[i])); //Eliminamos la cara interna al encontrar un duplicado
+                _facesDictionary.Remove(GetFaceKey(_faces[i])); //Eliminamos la cara interna al encontrar un duplicado
             }
             else
             {
-                facesDictionary.Add(GetFaceKey(faces[i]), faces[i]); //Si la clave no existe, se añade el triángulo al diccionario
+                _facesDictionary.Add(GetFaceKey(_faces[i]), _faces[i]); //Si la clave no existe, se añade el triángulo al diccionario
+            }
+
+            _edges[i * 3] = new Vector3Int(Mathf.Min(_faces[i].x, _faces[i].y), Math.Max(_faces[i].x, _faces[i].y), _faces[i].z);
+            _edges[i * 3 + 1] = new Vector3Int(Mathf.Min(_faces[i].x, _faces[i].z), Math.Max(_faces[i].x, _faces[i].z), _faces[i].y);
+            _edges[i * 3 + 2] = new Vector3Int(Mathf.Min(_faces[i].y, _faces[i].z), Math.Max(_faces[i].y, _faces[i].z), _faces[i].x);
+        }
+        _facesList = _facesDictionary.Values.ToList();
+
+        _edgesToDraw = new Vector3Int[_facesList.Count * 3]; //Creamos la estructura edgesToDraw, para almacenar las aristas sin las caras internas
+
+        for (int i = 0; i<_facesList.Count; i++) //Recorremos la lista de triángulos, para asignar a edges cada arista
+        {
+            _edgesToDraw[i*3] = new Vector3Int(Math.Min(_facesList[i].x, _facesList[i].y), Math.Max(_facesList[i].x, _facesList[i].y), _facesList[i].z);    // ABC
+            _edgesToDraw[i*3+1] = new Vector3Int(Math.Min(_facesList[i].x, _facesList[i].z), Math.Max(_facesList[i].x, _facesList[i].z), _facesList[i].y);  // ACB
+            _edgesToDraw[i*3+2] = new Vector3Int(Math.Min(_facesList[i].y, _facesList[i].z), Math.Max(_facesList[i].y, _facesList[i].z), _facesList[i].x);  // BCA 
+        }
+
+        //edges = edges.OrderBy(edge => edge.x).ThenBy(edge => edge.y).ToArray(); //Ordenamos el array edges en función del primer parámetro de una arista, y luego, en función del segundo parámetro
+
+        for(int i = 0; i<_edges.Length; i++)
+        {
+            if (_edgesDictionary.ContainsKey(GetEdgeKey(_edges[i])))
+            {
+                continue;
+            }
+            else
+            {
+                _edgesDictionary.Add(GetEdgeKey(_edges[i]), _edges[i]);
+                _edgesList.Add(_edges[i]);
             }
         }
-        facesList = facesDictionary.Values.ToList();
 
-        edges = new Vector3Int[facesList.Count * 3]; //Creamos la estructura edges, para almacenar todas las aristas
-
-        for (int i = 0; i<facesList.Count; i++) //Recorremos la lista de triángulos, para asignar a edges cada arista
+        for (int i = 0; i< _edgesToDraw.Length; i++) //Se sigue un método de identificación de duplicados de forma similar que con faces, solo que en este caso, debemos comprobar solo entre dos valores
         {
-            edges[i*3] = new Vector3Int(Math.Min(facesList[i].x, facesList[i].y), Math.Max(facesList[i].x, facesList[i].y), facesList[i].z); // ABC
-            edges[i*3+1] = new Vector3Int(Math.Min(facesList[i].x, facesList[i].z), Math.Max(facesList[i].x, facesList[i].z), facesList[i].y); // ACB
-            edges[i*3+2] = new Vector3Int(Math.Min(facesList[i].y, facesList[i].z), Math.Max(facesList[i].y, facesList[i].z), facesList[i].x);// BCA 
-        }
-
-        edges = edges.OrderBy(edge => edge.x).ThenBy(edge => edge.y).ToArray(); //Ordenamos el array edges en función del primer parámetro de una arista, y luego, en función del segundo parámetro
-
-
-        for (int i = 0; i< edges.Length; i++) //Se sigue un método de identificación de duplicados de forma similar que con faces, solo que en este caso, debemos comprobar solo entre dos valores
-        {
-            if (edgesDictionary.ContainsKey(new Vector2Int(edges[i].x, edges[i].y)))
+            if (_edgesToDrawDictionary.ContainsKey(GetEdgeKey(_edgesToDraw[i])))
             {
                 continue; //Saltamos la iteración para ignorar los duplicados
             }
             else
             {
-                edgesDictionary.Add(new Vector2Int(edges[i].x, edges[i].y), edges[i]); //Si no hay arista duplicada se añade al diccionario
-                edgesList.Add(edges[i]);    //Si no hay arista duplicada, se añade a la lista para dibujarla después
+                _edgesToDrawDictionary.Add(GetEdgeKey(_edgesToDraw[i]), _edgesToDraw[i]); //Si no hay arista duplicada se añade al diccionario
+                _edgesToDrawList.Add(_edgesToDraw[i]);    //Si no hay arista duplicada, se añade a la lista para dibujarla después
             }
         }
 
@@ -189,9 +210,21 @@ public class MassSpring : MonoBehaviour
             }
         }*/
 
-        springListIsFull = true; //Se activa el booleano springListIsFull cuando la lista de muelles se ha llenado con todos los elementos del objeto
+        for(int i = 0; i<_edgesList.Count; i++)
+        {
+            springs.Add(new Spring(kT, nodes[_edgesList[i].x], nodes[_edges[i].y]));
+        }
 
-        //ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
+        _springListIsFull = true; //Se activa el booleano springListIsFull cuando la lista de muelles se ha llenado con todos los elementos del objeto
+
+        ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
+    }
+
+    Vector2Int GetEdgeKey(Vector3Int edge)
+    {
+        int min = Mathf.Min(edge.x, edge.y);    //Extraemos el índice más pequeño de los dos
+        int max = Mathf.Max(edge.x, edge.y);    //Extraemos el índice más grande de los dos
+        return new Vector2Int(min, max);
     }
 
     Vector3Int GetFaceKey(Vector3Int face)
@@ -210,8 +243,8 @@ public class MassSpring : MonoBehaviour
         char[] separators = {' ', '\n', '\r', '\t'}; //Saltamos espacios, saltos de línea o tabulaciones 
         string[] strValues = text.Split(separators, StringSplitOptions.RemoveEmptyEntries); //Para evitar posibles espacios en blanco
         
-        int idx = 0;
-        int stride = 0;
+        int idx;
+        int stride;
 
         if(type == TypeOfFile.Node) 
         {
@@ -265,37 +298,6 @@ public class MassSpring : MonoBehaviour
     {
         //Dibujado de los gizmos de los nodos en coordenadas globales
         Gizmos.matrix = transform.localToWorldMatrix; //Se hace el paso de coordenadas locales a globales para evitar que los gizmos se pinten en otro lugar que no sea el nodo correspondiente
-
-        /*for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
-        {
-            Vector3 pos = new Vector3(
-                ListOfNode[i],
-                ListOfNode[i + 1],
-                ListOfNode[i + 2]
-            );
-
-            Gizmos.color = Color.green;
-            Gizmos.DrawSphere(pos, 0.2f);
-        }*/
-        //Gizmos.matrix = Matrix4x4.identity;
-
-        /*for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
-        {
-            int nodeIndex = (i / 3) + 1; // +1 si quieres que coincida con TetGen
-
-            float x = ListOfNode[i];
-            float y = ListOfNode[i + 1];
-            float z = ListOfNode[i + 2];
-
-            // Si estás intercambiando ejes para Unity:
-            Vector3 pos = new Vector3(x, y, z);
-
-            Gizmos.DrawSphere(pos, 0.2f);
-
-#if UNITY_EDITOR
-            Handles.Label(pos + Vector3.up * 0.25f, nodeIndex.ToString());
-#endif
-        }*/
         DrawIfNotNull(); //Se trata de dibujar los gizmos
     }
 
@@ -310,18 +312,18 @@ public class MassSpring : MonoBehaviour
             Gizmos.DrawSphere(pos, 0.2f);
         }*/
 
-        if (nodeListIsFull) 
+        if (_nodeListIsFull)
         {
-            Gizmos.color = Color.blue; //Se asigna color verde a los gizmos esféricos de los nodos
+            Gizmos.color = Color.blue; //Se asigna color azul a los gizmos esféricos de los nodos
             foreach (var node in ListOfNodes) //Se recorre cada nodo de la lista
             {
                 Gizmos.DrawSphere(node.pos, 0.4f); //Se pinta una esfera de radio 0.2 (unidades de Unity) sobre cada nodo de la lista
             }
         }
 
-        
 
-        if (springListIsFull)
+
+        if (_springListIsFull)
         {
             /*Gizmos.color = Color.red;
             foreach (var spring in ListOfSprings) //Se recorre cada muelle de la lista
@@ -341,11 +343,18 @@ public class MassSpring : MonoBehaviour
                 }
             }*/
             Gizmos.color = Color.red;
-            foreach(var edge in edgesList)
+            foreach (var edge in _edgesToDrawList)
             {
                 //Si va mal es porque en programación se empieza en 0 pero TetGen los numera desde el 1
+                Gizmos.DrawLine(new Vector3(_listOfNode[edge.x * 3], _listOfNode[edge.x * 3 + 1], _listOfNode[edge.x * 3 + 2]), new Vector3(_listOfNode[edge.y * 3], _listOfNode[edge.y * 3 + 1], _listOfNode[edge.y * 3 + 2]));
+            }
+
+            //Para testeo, dibujado de todas las aristas no duplicadas
+            /*Gizmos.color = Color.green;
+            foreach (var edge in edgesList)
+            {
                 Gizmos.DrawLine(new Vector3(ListOfNode[edge.x * 3], ListOfNode[edge.x * 3 + 1], ListOfNode[edge.x * 3 + 2]), new Vector3(ListOfNode[edge.y * 3], ListOfNode[edge.y * 3 + 1], ListOfNode[edge.y * 3 + 2]));
-            } 
+            }*/
         }
     }
 
