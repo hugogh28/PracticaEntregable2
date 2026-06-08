@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /******************************************************************************
 * GRADO EN DISEÑO Y DESARROLLO DE VIDEOJUEGOS - ANIMACIÓN 3D
@@ -26,10 +27,13 @@ public class Spring
                                    // Unity (m)
     public Quaternion rotation; // Nos permitirá calcular la orientación del
                                 // muelle  
+
+    public float volume;
+
     public Node nodeA; // Primer extremo del muelle
     public Node nodeB; // Segundo extremo del muelle
 
-    public Spring(float cElasticity, Node A, Node B)
+    public Spring(float cElasticity, Node A, Node B, float vol)
     {
         k = cElasticity; //Asignamos al nodo su constante de rigidez
         nodeA = A; //El nodo A del muelle, corresponde con el primer nodo recibido al crear un nuevo muelle
@@ -39,6 +43,8 @@ public class Spring
         u = Vector3.Normalize(u); //Vector normalizado que almacena la orientación del muelle
         pos = (A.pos + B.pos) / 2f; //Posición del punto medio del muelle, calculado en base a la media aritmética de las posiciones de sus nodos
         rotation = Quaternion.FromToRotation(Vector3.up, u); //Orientación del muelle según el vector dirección
+
+        volume = vol; 
 
         length = length0; //Asignamos el cálculo inicial de la longitud al muelle (para poder hacer cálculos a posteriori)
     }

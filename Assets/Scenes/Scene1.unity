@@ -526,9 +526,6 @@ MonoBehaviour:
   dampingSprings: 0.2
   integrationMethod: 1
   h: 0.02
-  parseList: []
-  ListOfTet: 
-  ListOfNode: []
   kT: 100
   kF: 0.5
   fixer:
@@ -585,6 +582,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Asset
       objectReference: {fileID: 0}
+    - target: {fileID: 6951891913033123169, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
+      propertyPath: m_Name
+      value: Inter
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -625,9 +626,6 @@ MonoBehaviour:
   dampingSprings: 0.2
   integrationMethod: 1
   h: 0.02
-  parseList: []
-  ListOfTet: 
-  ListOfNode: []
   kT: 10
   kF: 0.5
   fixer:

@@ -28,7 +28,7 @@ public class MassSpring : MonoBehaviour
 
     [Header("Modificadores de la animación")]
     public bool paused; //Booleano que nos servirá para pausar la animación
-    public float mass; //Masa del objeto (100 gramos)
+    public float densityMass; //Masa del objeto (100 gramos)
     public Vector3 g; //El valor de la gravedad aplicado al objeto masa-muelle (está en m/s)
     public float dampingNodes; //Amortiguamiento para el movimiento absoluto de los nodos
     public float dampingSprings; //Amortiguamiento para frenar la deformación de los muelles
@@ -62,6 +62,8 @@ public class MassSpring : MonoBehaviour
 
     private List<int> _listOfTet = new List<int>();
     private List<float> _listOfNode = new List<float>();
+    private List<Vector4> _listOfTetVector = new List<Vector4>();
+    private List<Vector3> _listOfNodeVector = new List<Vector3>();
 
     bool nodeFull = false;
 
@@ -84,10 +86,22 @@ public class MassSpring : MonoBehaviour
     Dictionary<Vector3Int, Vector3Int> _facesDictionary = new Dictionary<Vector3Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente los triángulos repetidos, ya que se les puede asignar una clave
     Dictionary<Vector2Int, Vector3Int> _edgesToDrawDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
     Dictionary<Vector2Int, Vector3Int> _edgesDictionary = new Dictionary<Vector2Int, Vector3Int>(); //Se crea un diccionario con el objetivo de filtrar más fácilmente las aristas repetidas, ya que se les puede asignar una clave
-    
+    Dictionary<Vector2Int, float> _edgesVolumeDictionary = new Dictionary<Vector2Int, float>();
+
     List<Vector3Int> _facesList = new List<Vector3Int>();    //Lista de caras no duplicadas
     List<Vector3Int> _edgesToDrawList = new List<Vector3Int>();  //Lista de aristas que aparecerán dibujadas
     List<Vector3Int> _edgesList = new List<Vector3Int>();    //Lista de aristas no duplicadas para el cálculo de físicas
+    List<float> _edgesVolume = new List<float>();
+
+    List<float> _vTet = new List<float>();  //Lista que almacena los volúmenes de todos los tetraedros
+
+    List<float> _volumes;
+
+    float[] _masses;
+
+    List<Vector4> _weigths = new List<Vector4>();
+    List<Vector3> _bNodes = new List<Vector3>(); //Lista que guarda las posiciones baricéntricas de los vértices de la malla
+    List<int> _containedTet = new List<int>();
 
     void Start()
     {
@@ -97,15 +111,18 @@ public class MassSpring : MonoBehaviour
         Debug.Log("Inicio del archivo .ele");
         ParseFile(ele, eleTetgen, _listOfTet);
 
+        TurnIntoVectors(_listOfNode, _listOfNodeVector, _listOfTet, _listOfTetVector);
+
         nodeFull = true;
 
-        Mesh mesh = this.GetComponent<MeshFilter>().mesh; //Se guarda en la variable mesh el mallado del objeto
+        Mesh mesh = this.GetComponentInChildren<MeshFilter>().mesh; //Se guarda en la variable mesh el mallado del objeto
 
         cloth = mesh; //Para poder hacer las modificaciones en la malla, se guarda la mesh en una variable global
 
         Vector3[] vertices = mesh.vertices; //Se guardan en un array todos los vértices de la mesh
 
         verts = vertices; //Para poder hacer las modificaciones en la mesh, se guardan los vértices de la mesh en una variable global
+
 
         List<Node> nodes = new List<Node>(vertices.Length); //Se crea una lista de nodos cuyo tamaño sea el de los vértices de la mesh
         List<Spring> springs = new List<Spring>(); //Se crea una lista de muelles cuyo tamaño es indefinido (ya que se presupone que podemos usar cualquier bandera)
@@ -126,7 +143,23 @@ public class MassSpring : MonoBehaviour
 
         _nodeListIsFull = true; //Se activa el booleano nodeListIsFull cuando la lista de nodos se ha llenado con todos los elementos del objeto
 
+        CalculateWeights(verts, _listOfTetVector, _listOfNodeVector);
 
+        _volumes = CalculateVolumes(_listOfNode, _listOfTet); //Calculamos los volúmenes de todos los tetraedros
+        CalculateEdgeVolumes(); //Calculos los volúmenes de todas las aristas justo después de calcular los de los tetraedros
+
+        _masses = new float[nodes.Count];
+
+        for(int i = 0; i<_listOfTet.Count; i += 4)
+        {
+            float tetMass = densityMass * _volumes[i / 4];
+
+            //Añadimos al array de masas la masa del nodo de cada tetraedro
+            _masses[_listOfTet[i] - 1] += tetMass / 4f;
+            _masses[_listOfTet[i + 1] - 1] += tetMass / 4f;
+            _masses[_listOfTet[i + 2] - 1] += tetMass / 4f;
+            _masses[_listOfTet[i + 3] - 1] += tetMass / 4f;
+        }
 
         _faces = new Vector3Int[_listOfTet.Count]; //Creamos un array de caras, para almacenar todos los triángulos de todos los tetraedros
 
@@ -166,8 +199,6 @@ public class MassSpring : MonoBehaviour
             _edgesToDraw[i*3+1] = new Vector3Int(Math.Min(_facesList[i].x, _facesList[i].z), Math.Max(_facesList[i].x, _facesList[i].z), _facesList[i].y);  // ACB
             _edgesToDraw[i*3+2] = new Vector3Int(Math.Min(_facesList[i].y, _facesList[i].z), Math.Max(_facesList[i].y, _facesList[i].z), _facesList[i].x);  // BCA 
         }
-
-        //edges = edges.OrderBy(edge => edge.x).ThenBy(edge => edge.y).ToArray(); //Ordenamos el array edges en función del primer parámetro de una arista, y luego, en función del segundo parámetro
 
         for(int i = 0; i<_edges.Length; i++)
         {
@@ -212,12 +243,132 @@ public class MassSpring : MonoBehaviour
 
         for(int i = 0; i<_edgesList.Count; i++)
         {
-            springs.Add(new Spring(kT, nodes[_edgesList[i].x], nodes[_edges[i].y]));
+            float vol = _edgesVolumeDictionary[GetEdgeKey(_edgesList[i])];
+
+            //En lugar de añadir solo los nodos y la constante de rigidez, se añade también el volumen de la arista (calculado en CalculateEdgeVolumes)
+            springs.Add(new Spring(kT, nodes[_edgesList[i].x], nodes[_edgesList[i].y], vol));
         }
 
         _springListIsFull = true; //Se activa el booleano springListIsFull cuando la lista de muelles se ha llenado con todos los elementos del objeto
 
         ListOfSprings = springs; //Para poder hacer uso de OnDrawGizmos() se pasa la lista springs a ListOfSprings
+    }
+
+    //Método genérico para calcular las posiciones baricéntricas de cada vértice de la malla
+    Vector3 BaricentricPosition(Vector4 weight, Vector4 tet)
+    {
+        Vector3 a = ListOfNodes[(int)tet.x].pos;
+        Vector3 b = ListOfNodes[(int)tet.y].pos;
+        Vector3 c = ListOfNodes[(int)tet.z].pos;
+        Vector3 d = ListOfNodes[(int)tet.w].pos;
+
+        return weight.x * a + weight.y * b + weight.z * c + weight.w * d;
+    }
+
+    //Método genérico que, dados dos puntos de una arista (y un sexto del volumen del tetraedro en el que se encuentran) comprueban 
+    //si el diccionario tiene un registro de la arista, se añadirá el volumen del nuevo tetraedro (para evitar pérdidas importantes para los cálculos)
+    void AddVolumeToEdgeDictionary(int x, int y, float sixthOfVolume)
+    {
+        if (_edgesVolumeDictionary.ContainsKey(GetEdgeKey(new Vector3Int(x, y, 0)))) //Usamos un 0 por rellenar el hueco, ya que dado el método GetEdgeKey se podría usar cualquier número ya que se ignora
+        {
+            _edgesVolumeDictionary[GetEdgeKey(new Vector3Int(x, y, 0))] += sixthOfVolume;
+        }
+        else
+        {
+            _edgesVolumeDictionary.Add(GetEdgeKey(new Vector3Int(x, y, 0)), sixthOfVolume);
+        }
+    }
+
+    void CalculateEdgeVolumes()
+    {
+        for(int i = 0; i < _listOfTet.Count; i += 4)
+        {
+            int a = _listOfTet[i] - 1;
+            int b = _listOfTet[i + 1] - 1;
+            int c = _listOfTet[i + 2] - 1;
+            int d = _listOfTet[i + 3] - 1;
+
+            AddVolumeToEdgeDictionary(a, b, _volumes[i / 4] / 6f);  //Arista AB
+            AddVolumeToEdgeDictionary(a, c, _volumes[i / 4] / 6f);  //Arista AC
+            AddVolumeToEdgeDictionary(a, d, _volumes[i / 4] / 6f);  //Arista AD
+            AddVolumeToEdgeDictionary(b, c, _volumes[i / 4] / 6f);  //Arista BC
+            AddVolumeToEdgeDictionary(b, d, _volumes[i / 4] / 6f);  //Arista BD
+            AddVolumeToEdgeDictionary(c, d, _volumes[i / 4] / 6f);  //Arista CD
+        }
+    }
+
+    //Método que calcula las coordenadas baricéntricas de todos los vértices del mallado
+    void CalculateWeights(Vector3[] meshVerts, List<Vector4> tet, List<Vector3> nodes)
+    {
+        for(int i = 0; i< meshVerts.Length;i++)
+        {
+            for(int j = 0; j<tet.Count; j++)
+            {
+                //Por cada índice de la malla calculamos los pesos de cada tetraedro, si la suma de todos es 1 (y no más ni menos), el vértice pertenece a ese tetraedro
+                float volumeTotal = CalculateVolume(nodes[(int)tet[j].x], nodes[(int)tet[j].y], nodes[(int)tet[j].z], nodes[(int)tet[j].w]);
+
+                float wA = CalculateVolume(meshVerts[i], nodes[(int)tet[j].y], nodes[(int)tet[j].z], nodes[(int)tet[j].w]) / volumeTotal;
+                float wB = CalculateVolume(nodes[(int)tet[j].x], meshVerts[i], nodes[(int)tet[j].z], nodes[(int)tet[j].w]) / volumeTotal;
+                float wC = CalculateVolume(nodes[(int)tet[j].x], nodes[(int)tet[j].y], meshVerts[i], nodes[(int)tet[j].w]) / volumeTotal;
+                float wD = CalculateVolume(nodes[(int)tet[j].x], nodes[(int)tet[j].y], nodes[(int)tet[j].z], meshVerts[i]) / volumeTotal;
+
+                float w = wA + wB + wC + wD; //Sumamos todos los pesos
+
+                if (Mathf.Abs(w-1) < 0.0001f ) //Usamos Epsilon porque debido al uso de float, podría haber casos en los que w-1 no sea exactamente 0
+                {
+                    _weigths.Add(new Vector4(wA,wB,wC,wD));
+                    //_bNodes.Add(BaricentricPosition(_weigths[i], tet[j]));
+                    _containedTet.Add(j);
+                    break; //Una vez se encuentra el tetraedro que contiene al vértice, salimos del bucle para no comprobar más tetraedros para ese vértice
+                }
+            }
+        }
+    }
+
+    //Método genérico que obtiene el volumen de un tetraedro de los puntos dados por parámetro
+    float CalculateVolume(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+    {
+        return Mathf.Abs(Vector3.Dot(b - a, Vector3.Cross(c - a, d - a))) / 6f;
+    }
+
+    //Método que obtiene los volúmenes de todos los tetraedros
+    List<float> CalculateVolumes(List<float> nodes, List<int> tet)
+    {
+        List<float> volume = new List<float>();
+        List<Vector3> n = new List<Vector3>();
+
+        for (int i = 0; i < nodes.Count; i += 3)
+        {
+            n.Add(new Vector3(nodes[i], nodes[i + 1], nodes[i + 2]));
+        }
+
+        for(int i = 0; i<tet.Count; i+=4)
+        {
+            Vector3 a = n[tet[i] - 1];
+            Vector3 b = n[tet[i + 1] - 1];
+            Vector3 c = n[tet[i + 2] - 1];
+            Vector3 d = n[tet[i + 3] - 1];
+
+            volume.Add(
+                Math.Abs(Vector3.Dot(b - a, Vector3.Cross(c - a, d - a))) / 6f
+                );
+        }
+
+        return volume;
+    }
+
+    void TurnIntoVectors(List<float> nodes, List<Vector3> nodesV, List<int> tet, List<Vector4> tetV)
+    {
+        //nodesV.Clear();
+        //tetV.Clear();
+
+        for(int i=0; i<nodes.Count; i+=3)
+        {
+            nodesV.Add(new Vector3(nodes[i], nodes[i + 1], nodes[i + 2]));
+        }for(int i = 0; i< tet.Count; i += 4)
+        {
+            tetV.Add(new Vector4(tet[i] - 1, tet[i + 1] - 1, tet[i + 2] - 1, tet[i + 3] - 1));
+        }
     }
 
     Vector2Int GetEdgeKey(Vector3Int edge)
@@ -345,8 +496,7 @@ public class MassSpring : MonoBehaviour
             Gizmos.color = Color.red;
             foreach (var edge in _edgesToDrawList)
             {
-                //Si va mal es porque en programación se empieza en 0 pero TetGen los numera desde el 1
-                Gizmos.DrawLine(new Vector3(_listOfNode[edge.x * 3], _listOfNode[edge.x * 3 + 1], _listOfNode[edge.x * 3 + 2]), new Vector3(_listOfNode[edge.y * 3], _listOfNode[edge.y * 3 + 1], _listOfNode[edge.y * 3 + 2]));
+                Gizmos.DrawLine(ListOfNodes[edge.x].pos, ListOfNodes[edge.y].pos);
             }
 
             //Para testeo, dibujado de todas las aristas no duplicadas
@@ -413,29 +563,36 @@ public class MassSpring : MonoBehaviour
     /// </summary>
     void integrateExplicitEuler()
     {
-        int i = 0;
         Vector3 gravity = transform.InverseTransformDirection(g); //Reconvertimos el vector de la gravedad para que la tela caiga hacia el suelo (y no hacia su eje y local)
         // Recorremos la lista de nodos para aplicar las fuerzas a cada uno de
         // ellos
-        foreach (Node node in ListOfNodes)
+        for (int i = 0; i < ListOfNodes.Count; i++)
         {
+            Node node = ListOfNodes[i];
             if (!node.fixedNode) // Si el nodo no es fijo
             {
                 // r_(n+1) = r_n + h * v_n
 
                 node.pos += h * node.vel;
-                verts[i] = node.pos; //Asignamos el nuevo valor de la posición del nodo al array verts
-                node.force = -(mass) * gravity;
+                //verts[i] = node.pos; //Asignamos el nuevo valor de la posición del nodo al array verts
+                node.force = -(_masses[i]) * gravity;
 
 
                 node.force -= (dampingNodes) * node.vel; //Frenamos el movimiento absoluto de los nodos
 
             }
-            i++; //Como se ha terminado una iteración, sumamos 1 sobre la variable que hemos creado para permitir que verts[i] y node, correspondan en posición
         }
-        this.GetComponent<MeshFilter>().mesh.vertices = verts; //Cambiamos la posición del vértice de la mesh a la que indique el array verts
-        this.GetComponent<MeshFilter>().mesh.RecalculateBounds(); //Se recalcula el "bounding volume" de la mesh y todas sus sub-meshes con los datos de sus vértices
-        this.GetComponent<MeshCollider>().sharedMesh = this.GetComponent<MeshFilter>().mesh; //Se cambia el collider de la bandera para que se vea afectado por los cambios de los vértices
+        for (int j = 0; j<verts.Length;j++)
+        {
+            Vector4 tet = _listOfTetVector[_containedTet[j]];
+            Vector4 weights = _weigths[j];
+
+            verts[j] = BaricentricPosition(weights, tet);
+        }
+
+        this.GetComponentInChildren<MeshFilter>().mesh.vertices = verts; //Cambiamos la posición del vértice de la mesh a la que indique el array verts
+        this.GetComponentInChildren<MeshFilter>().mesh.RecalculateBounds(); //Se recalcula el "bounding volume" de la mesh y todas sus sub-meshes con los datos de sus vértices
+        this.GetComponentInChildren<MeshCollider>().sharedMesh = this.GetComponentInChildren<MeshFilter>().mesh; //Se cambia el collider de la bandera para que se vea afectado por los cambios de los vértices
 
         // Recorremos la lista de muelles para añadir a cada nodo la fuerza
         // elástica de cada muelle. Por la ley de acción y reacción, estas
@@ -443,10 +600,14 @@ public class MassSpring : MonoBehaviour
         // muelle
         foreach (Spring spring in ListOfSprings)
         {
-            spring.nodeA.force += -spring.k * (spring.length - spring.length0)
-                * spring.u;
-            spring.nodeB.force += spring.k * (spring.length - spring.length0)
-                * spring.u;
+            float stiffness = spring.k * spring.volume / (spring.length0 * spring.length0);
+
+            Vector3 dFactor = spring.u * (spring.length / spring.length0);
+
+            spring.nodeA.force += -stiffness * (spring.length - spring.length0)
+                * dFactor;
+            spring.nodeB.force += stiffness * (spring.length - spring.length0)
+                * dFactor;
 
             //Frenamos la deformación de los muelles, como la fuerza se divide en nodoA y nodoB, habrá que hacer una pequeña modificación para que sean fuerzas contrarias
             spring.nodeA.force -= dampingSprings * (Vector3.Dot(spring.u, (spring.nodeA.vel - spring.nodeB.vel))) * spring.u; 
@@ -456,12 +617,13 @@ public class MassSpring : MonoBehaviour
 
         // Recorremos de nuevo la lista de nodos para calcular la nueva
         // velocidad, una vez que ya conocemos la fuerza total en cada nodo
-        foreach (Node node in ListOfNodes)
+        for (int i = 0; i<ListOfNodes.Count; i++)
         {
+            Node node = ListOfNodes[i];
             if (!node.fixedNode) // Si el nodo no es fijo
             {
                 // v_(n+1) = v_n + h F_n / m
-                node.vel += h * node.force / (mass);
+                node.vel += h * node.force / (_masses[i]);
             }
         }
     }
@@ -471,15 +633,14 @@ public class MassSpring : MonoBehaviour
     /// </summary>
     void integrateSymplecticEuler()
     {
-        int i = 0;
         Vector3 gravity = transform.InverseTransformDirection(g); //Reconvertimos el vector de la gravedad para que la tela caiga hacia el suelo (y no hacia su eje y local)
         // Recorremos la lista de nodos para aplicar las fuerzas a cada uno de
         // ellos
-        foreach (Node node in ListOfNodes)
+        for (int i = 0; i < ListOfNodes.Count; i++)
         {
-            node.force = -(mass) * gravity;
+            Node node = ListOfNodes[i];
 
-
+            node.force = -(_masses[i]) * gravity;
             node.force -= (dampingNodes) * node.vel; //Frenamos el movimiento absoluto de los nodos
 
         }
@@ -490,10 +651,14 @@ public class MassSpring : MonoBehaviour
         // muelle
         foreach (Spring spring in ListOfSprings)
         {
-            spring.nodeA.force += -spring.k * (spring.length - spring.length0)
-                * spring.u;
-            spring.nodeB.force += spring.k * (spring.length - spring.length0)
-                * spring.u;
+            float stiffness = spring.k * spring.volume / (spring.length0 * spring.length0);
+
+            Vector3 dFactor = spring.u * (spring.length / spring.length0);
+
+            spring.nodeA.force += -stiffness * (spring.length - spring.length0)
+                * dFactor;
+            spring.nodeB.force += stiffness * (spring.length - spring.length0)
+                * dFactor;
 
 
             //Frenamos la deformación de los muelles, como la fuerza se divide en nodoA y nodoB, habrá que hacer una pequeña modificación para que sean fuerzas contrarias
@@ -505,21 +670,30 @@ public class MassSpring : MonoBehaviour
         // Recorremos de nuevo la lista de nodos para calcular la nueva
         // velocidad y la nueva posición, una vez que ya conocemos la fuerza
         // total en cada nodo
-        foreach (Node node in ListOfNodes)
+        for (int i = 0; i <ListOfNodes.Count; i++)
         {
+            Node node = ListOfNodes[i];
             
             if (!node.fixedNode) // Si el nodo no es fijo
             {
                 // v_(n+1) = v_n + h F_n / m
-                node.vel += h * node.force / (mass);
+                node.vel += h * node.force / (_masses[i]);
                 // r_(n+1) = r_n + h * v_(n+1)
                 node.pos += h * node.vel;
-                verts[i] = node.pos; //Asignamos el nuevo valor de la posición del nodo al array verts
+                //verts[i] = node.pos; //Asignamos el nuevo valor de la posición del nodo al array verts
             }
-            i++; //Como se ha terminado una iteración, sumamos 1 sobre la variable que hemos creado para permitir que verts[i] y node, correspondan en posición
         }
-        this.GetComponent<MeshFilter>().mesh.vertices = verts; //Cambiamos la posición del vértice de la mesh a la que indique el array verts
-        this.GetComponent<MeshFilter>().mesh.RecalculateBounds(); //Se recalcula el "bounding volume" de la mesh y todas sus sub-meshes con los datos de sus vértices
-        this.GetComponent<MeshCollider>().sharedMesh = this.GetComponent<MeshFilter>().mesh; //Se cambia el collider de la bandera para que se vea afectado por los cambios de los vértices
+
+        for (int j = 0; j < verts.Length; j++)
+        {
+            Vector4 tet = _listOfTetVector[_containedTet[j]];
+            Vector4 weights = _weigths[j];
+
+            verts[j] = BaricentricPosition(weights, tet);
+        }
+
+        this.GetComponentInChildren<MeshFilter>().mesh.vertices = verts; //Cambiamos la posición del vértice de la mesh a la que indique el array verts
+        this.GetComponentInChildren<MeshFilter>().mesh.RecalculateBounds(); //Se recalcula el "bounding volume" de la mesh y todas sus sub-meshes con los datos de sus vértices
+        this.GetComponentInChildren<MeshCollider>().sharedMesh = this.GetComponentInChildren<MeshFilter>().mesh; //Se cambia el collider de la bandera para que se vea afectado por los cambios de los vértices
     }
 }
