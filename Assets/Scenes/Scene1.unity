@@ -520,12 +520,12 @@ MonoBehaviour:
   nodeTetgen: {fileID: 4900000, guid: 41d2d9d73f577884b9a6aedf36f20e3b, type: 3}
   eleTetgen: {fileID: 4900000, guid: 93b972e62e027cc40bc9c40aef4857a8, type: 3}
   paused: 1
-  mass: 0.1
-  g: {x: 0, y: 0, z: 0}
-  dampingNodes: 0.01
-  dampingSprings: 0.2
+  densityMass: 0.1
+  g: {x: 0, y: 9.8, z: 0}
+  dampingNodes: 0.1
+  dampingSprings: 0.02
   integrationMethod: 1
-  h: 0.02
+  h: 0.009
   kT: 100
   kF: 0.5
   fixer:
@@ -540,11 +540,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 0.15
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: 0.06
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0cab3a5c181bc6d42844e016473308a0, type: 3}
       propertyPath: m_LocalPosition.z
@@ -620,7 +620,7 @@ MonoBehaviour:
   nodeTetgen: {fileID: 4900000, guid: 41d2d9d73f577884b9a6aedf36f20e3b, type: 3}
   eleTetgen: {fileID: 4900000, guid: 93b972e62e027cc40bc9c40aef4857a8, type: 3}
   paused: 1
-  mass: 0.1
+  densityMass: 0
   g: {x: 0, y: 9.8, z: 0}
   dampingNodes: 0.01
   dampingSprings: 0.2

@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
+//using System.IO;
 using System.Linq;
-using Unity.VisualScripting;
-using UnityEditor;
+//using Unity.VisualScripting;
+//using UnityEditor;
 using UnityEngine;
 
 /******************************************************************************
@@ -74,7 +74,7 @@ public class MassSpring : MonoBehaviour
     [Header("Fijadores")]
     public List<Fixer> fixer = new List<Fixer>(); //Desde Unity se hará por esta línea la asignación del fixer, es decir, del cubo que fija nodos, a este script para que los nodos se fijen
 
-    Mesh cloth;
+    Mesh mesh;
 
     Vector3[] verts;
 
@@ -91,18 +91,19 @@ public class MassSpring : MonoBehaviour
     List<Vector3Int> _facesList = new List<Vector3Int>();    //Lista de caras no duplicadas
     List<Vector3Int> _edgesToDrawList = new List<Vector3Int>();  //Lista de aristas que aparecerán dibujadas
     List<Vector3Int> _edgesList = new List<Vector3Int>();    //Lista de aristas no duplicadas para el cálculo de físicas
-    List<float> _edgesVolume = new List<float>();
-
-    List<float> _vTet = new List<float>();  //Lista que almacena los volúmenes de todos los tetraedros
 
     List<float> _volumes;
 
     float[] _masses;
 
     List<Vector4> _weigths = new List<Vector4>();
-    List<Vector3> _bNodes = new List<Vector3>(); //Lista que guarda las posiciones baricéntricas de los vértices de la malla
     List<int> _containedTet = new List<int>();
 
+    /******************************************************************************
+    * Breve descripción:
+    * En el método Start() se pasan los valores de los archivos de texto a valores interpretables, se calculan volúmenes,
+    * muelles y nodos, todo, de modo que luego los métodos de integración puedan modificar exitosamente en cada frame la apariencia de la malla
+    *****************************************************************************/
     void Start()
     {
         Debug.Log("Inicio del archivo .node");
@@ -117,7 +118,7 @@ public class MassSpring : MonoBehaviour
 
         Mesh mesh = this.GetComponentInChildren<MeshFilter>().mesh; //Se guarda en la variable mesh el mallado del objeto
 
-        cloth = mesh; //Para poder hacer las modificaciones en la malla, se guarda la mesh en una variable global
+        this.mesh = mesh; //Para poder hacer las modificaciones en la malla, se guarda la mesh en una variable global
 
         Vector3[] vertices = mesh.vertices; //Se guardan en un array todos los vértices de la mesh
 
@@ -226,21 +227,6 @@ public class MassSpring : MonoBehaviour
             }
         }
 
-        /*for(int i = 0; i < edges.Length; i++) //Se itera tantas veces como aristas hay (600 en el caso original)
-        {
-
-            if (i<edges.Length-1&&edges[i].x == edges[i + 1].x && edges[i].y == edges[i + 1].y) //Si dos aristas (adyacentes en la lista) se detectan como duplicadas, se añadirá un nodo de flexión y se evitará añadir un muelle de tracción
-            {
-                springs.Add(new Spring(kT, nodes[edges[i].x], nodes[edges[i].y])); //Se añade un nodo de tracción en la arista compartida entre nodos opuestos de triángulos adyacentes
-
-                i++; //Saltamos una posición para evitar duplicar muelles
-            }
-            else
-            {
-                springs.Add(new Spring(kT, nodes[edges[i].x], nodes[edges[i].y])); //Añade un muelle de tracción entre los vértices de la arista
-            }
-        }*/
-
         for(int i = 0; i<_edgesList.Count; i++)
         {
             float vol = _edgesVolumeDictionary[GetEdgeKey(_edgesList[i])];
@@ -279,6 +265,11 @@ public class MassSpring : MonoBehaviour
         }
     }
 
+
+    /******************************************************************************
+    * Breve descripción:
+    * CalculateEdgeVolumes(), tal y como su nombre indica, calcula los vólumenes de las aristas
+    *****************************************************************************/
     void CalculateEdgeVolumes()
     {
         for(int i = 0; i < _listOfTet.Count; i += 4)
@@ -297,6 +288,16 @@ public class MassSpring : MonoBehaviour
         }
     }
 
+
+    /******************************************************************************
+    * Breve descripción:
+    * CalculateWeights(), tal y como su nombre indica, calcula todos los pesos recibiendo el mallado y las listas de la envolvente
+    *
+    * Argumentos de entrada:
+    * - meshVerts: Vértices de la malla
+    * - tet: Lista de los tetraedros de la envolvente
+    * - node: Lista de nodos de la envolvente
+    *****************************************************************************/
     //Método que calcula las coordenadas baricéntricas de todos los vértices del mallado
     void CalculateWeights(Vector3[] meshVerts, List<Vector4> tet, List<Vector3> nodes)
     {
@@ -325,13 +326,35 @@ public class MassSpring : MonoBehaviour
         }
     }
 
-    //Método genérico que obtiene el volumen de un tetraedro de los puntos dados por parámetro
+    /******************************************************************************
+    * Breve descripción:
+    * CalculateVolume(), tal y como su nombre indica, calcula el volumen de un determinado tetraedro, dados unos puntos
+    *
+    * Argumentos de entrada:
+    * - a: primer vértice
+    * - b: segundo vértice
+    * - c: tercer vértice
+    * - d: cuarto vértice
+    *
+    * Valor devuelto:
+    * Devolvemos el valor del volumen del tetraedro calculado en base a los cuatro vértices proporcionados
+    *****************************************************************************/
     float CalculateVolume(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
     {
         return Mathf.Abs(Vector3.Dot(b - a, Vector3.Cross(c - a, d - a))) / 6f;
     }
 
-    //Método que obtiene los volúmenes de todos los tetraedros
+    /******************************************************************************
+    * Breve descripción:
+    * CalculateVolumes(), tal y como su nombre indica, calcula los volúmenes de todos los tetraedros
+    *
+    * Argumentos de entrada:
+    * - nodes: lista de nodos de la envolvente
+    * - tet: lista de tetraedros de la envolvente
+    *
+    * Valor devuelto:
+    * Devolvemos una lista de volúmenes en la cual almacenamos los volúmenes de todos los tetraedros
+    *****************************************************************************/
     List<float> CalculateVolumes(List<float> nodes, List<int> tet)
     {
         List<float> volume = new List<float>();
@@ -357,11 +380,18 @@ public class MassSpring : MonoBehaviour
         return volume;
     }
 
+    /******************************************************************************
+    * Breve descripción:
+    * TurnIntoVectors() reconvierte las listas recibidas del parsing de los archivos de la envolvente a listas fácilmente manejables
+    *
+    * Argumentos de entrada:
+    * - nodes: lista de nodos de la envolvente
+    * - tet: lista de tetraedros de la envolvente
+    * - nodesV: lista de nodos vacía
+    * - tetV: lista de tetraedros vacía
+    *****************************************************************************/
     void TurnIntoVectors(List<float> nodes, List<Vector3> nodesV, List<int> tet, List<Vector4> tetV)
     {
-        //nodesV.Clear();
-        //tetV.Clear();
-
         for(int i=0; i<nodes.Count; i+=3)
         {
             nodesV.Add(new Vector3(nodes[i], nodes[i + 1], nodes[i + 2]));
@@ -371,6 +401,17 @@ public class MassSpring : MonoBehaviour
         }
     }
 
+    /******************************************************************************
+    * Breve descripción:
+    * GetEdgeKey(), tal y como su nombre indica, extrae el identificador único de una arista para evitar duplicarla
+    *
+    * Argumentos de entrada:
+    * - edge: dado un vector arista
+    *
+    * Valor devuelto:
+    * Devolvemos un vector de enteros de dos dimensiones que actúa de identificador único para cada arista, de modo que evita
+    * aristas repetidas incluso si sus nodos aparecen en distinto orden
+    *****************************************************************************/
     Vector2Int GetEdgeKey(Vector3Int edge)
     {
         int min = Mathf.Min(edge.x, edge.y);    //Extraemos el índice más pequeño de los dos
@@ -378,6 +419,17 @@ public class MassSpring : MonoBehaviour
         return new Vector2Int(min, max);
     }
 
+    /******************************************************************************
+    * Breve descripción:
+    * GetFaceKey(), al igual que el anterior método, extrae el identificador único de una cara
+    *
+    * Argumentos de entrada:
+    * - face: dada una cara
+    *
+    * Valor devuelto:
+    * Devolvemos un vector de enteros de tres dimensiones que actúa de identificador único para cada cara, de modo que evita
+    * caras repetidas incluso si sus nodos aparecen en distinto orden
+    *****************************************************************************/
     Vector3Int GetFaceKey(Vector3Int face)
     {
         int min = Mathf.Min(face.x, Mathf.Min(face.y, face.z));    //Extraemos el índice más pequeño de los tres
@@ -386,7 +438,15 @@ public class MassSpring : MonoBehaviour
         return new Vector3Int(min, mid, max);
     }
 
-    //Se pasa por referencia el tipo de archivo, para poder deyterminar cómo se parseará
+    /******************************************************************************
+    * Breve descripción:
+    * ParseFile(), es un método que acepta valores genéricos para poder pasar los archivos de formato .txt a datos interpretables por Unity
+    *
+    * Argumentos de entrada:
+    * - TypeOfFyle: el tipo de archivo insertado
+    * - file: el archivo insertado
+    * - list: la lista que se verá actualizada
+    *****************************************************************************/
     void ParseFile<T>(TypeOfFile type,TextAsset file, List<T> list)
     {
         string text = file.text; //Extraemos todo el contenido del archivo, para ello, usamos el componente "text" 
@@ -429,7 +489,15 @@ public class MassSpring : MonoBehaviour
         }
     }
 
-    //Método genérico para añadir los valores de cada fichero a la lista pasada como parámetro
+    /******************************************************************************
+    * Breve descripción:
+    * AddValues(), es un método que acepta valores genéricos para poder añadir los valores extraídos de un archivo a una lista de valores
+    *
+    * Argumentos de entrada:
+    * - idx: el índice del array de valores (values) a ser analizado
+    * - values: los valores extraídos del archivo de texto
+    * - list: la lista que se verá actualizada
+    *****************************************************************************/
     private void AddValues<T>(int idx, string[] values, List<T> list)
     {
         object value;
@@ -452,16 +520,13 @@ public class MassSpring : MonoBehaviour
         DrawIfNotNull(); //Se trata de dibujar los gizmos
     }
 
-    //Para evitar llamadas a elementos no existentes usamos el método DrawIfNotNull, que comprueba si las listas de nodos y muelles han sido inizialidas y llenadas para evitar
-    //rellenar Gizmos que no existen
+    /******************************************************************************
+    * Breve descripción:
+    * DrawIfNotNull(), es un método que comprueba si todos los parámetros a dibujar han sido calculados 
+    * para evitar errores en consola y/o por pantalla
+    *****************************************************************************/
     void DrawIfNotNull()
     {
-        /*Gizmos.color = Color.blue;
-        for (int i = 0; i + 2 < ListOfNode.Count; i += 3)
-        {
-            Vector3 pos = new Vector3(ListOfNode[i], ListOfNode[i + 1], ListOfNode[i + 2]);
-            Gizmos.DrawSphere(pos, 0.2f);
-        }*/
 
         if (_nodeListIsFull)
         {
@@ -476,35 +541,12 @@ public class MassSpring : MonoBehaviour
 
         if (_springListIsFull)
         {
-            /*Gizmos.color = Color.red;
-            foreach (var spring in ListOfSprings) //Se recorre cada muelle de la lista
-            {
-                if (spring.k == kT) //Si es un muelle de tracción, se pinta de rojo. kT es la constante de rigidez de un muelle de tracción
-                {
-                    Gizmos.DrawLine(spring.nodeA.pos, spring.nodeB.pos); //Se pinta una línea sobre cada muelle de la lista
-                }
-            }
 
-            Gizmos.color = Color.blue;
-            foreach (var spring in ListOfSprings) //Se recorre cada muelle de la lista
-            {
-                if (spring.k == kF) //Si es un muelle de flexión, se pinta de azul. kF es la constante de rigidez de un muelle de flexión
-                {
-                    Gizmos.DrawLine(spring.nodeA.pos, spring.nodeB.pos); //Se pinta una línea sobre cada muelle de la lista
-                }
-            }*/
             Gizmos.color = Color.red;
             foreach (var edge in _edgesToDrawList)
             {
                 Gizmos.DrawLine(ListOfNodes[edge.x].pos, ListOfNodes[edge.y].pos);
             }
-
-            //Para testeo, dibujado de todas las aristas no duplicadas
-            /*Gizmos.color = Color.green;
-            foreach (var edge in edgesList)
-            {
-                Gizmos.DrawLine(new Vector3(ListOfNode[edge.x * 3], ListOfNode[edge.x * 3 + 1], ListOfNode[edge.x * 3 + 2]), new Vector3(ListOfNode[edge.y * 3], ListOfNode[edge.y * 3 + 1], ListOfNode[edge.y * 3 + 2]));
-            }*/
         }
     }
 
@@ -653,12 +695,10 @@ public class MassSpring : MonoBehaviour
         {
             float stiffness = spring.k * spring.volume / (spring.length0 * spring.length0);
 
-            Vector3 dFactor = spring.u * (spring.length / spring.length0);
+            Vector3 elasticForce = stiffness * (spring.length - spring.length0) * spring.u;
 
-            spring.nodeA.force += -stiffness * (spring.length - spring.length0)
-                * dFactor;
-            spring.nodeB.force += stiffness * (spring.length - spring.length0)
-                * dFactor;
+            spring.nodeA.force += -elasticForce;
+            spring.nodeB.force += elasticForce;
 
 
             //Frenamos la deformación de los muelles, como la fuerza se divide en nodoA y nodoB, habrá que hacer una pequeña modificación para que sean fuerzas contrarias
